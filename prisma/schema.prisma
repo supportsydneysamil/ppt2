@@ -1,0 +1,32 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Deck {
+  id        String   @id @default(cuid())
+  title     String
+  settings  String   // JSON: aspectRatio, theme, defaultFontFamily
+  slides    String   // JSON: Slide[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  sessions  Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  deckId    String
+  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  state     String   // JSON: slideIndex, blackoutMode, updatedAt
+  notes     String?  // Operator notes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
