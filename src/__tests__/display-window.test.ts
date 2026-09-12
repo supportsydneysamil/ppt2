@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { prepareDisplayWindow, selectDisplayScreen } from '@/lib/display-window';
+import { prepareDisplayWindow, readScreenPermission, requestScreenPermission, selectDisplayScreen } from '@/lib/display-window';
 
 const primary = { availLeft: 0, availTop: 0, availWidth: 1920, availHeight: 1040, isPrimary: true };
 const secondary = { availLeft: -1920, availTop: 0, availWidth: 1920, availHeight: 1080, isPrimary: false };
@@ -80,5 +80,49 @@ describe('presentation display launch', () => {
         const { popup } = setup(async () => ({ screens: [primary, secondary], currentScreen: primary }));
         popup.moveTo = vi.fn();
         expect(await prepareDisplayWindow().placement).toBe('manual');
+    });
+});
+
+describe('screen permission', () => {
+    function stubPermissions(state?: string) {
+        const query = vi.fn(async ({ name }: { name: string }) => {
+            if (!state) throw new TypeError(`Unsupported permission ${name}`);
+            return { state };
+        });
+        vi.stubGlobal('navigator', { permissions: { query } });
+        return query;
+    }
+
+    it('offers the permission button only while the browser can still prompt', async () => {
+        setup(async () => ({ screens: [primary], currentScreen: primary }));
+        stubPermissions('prompt');
+        expect(await readScreenPermission()).toBe('prompt');
+
+        stubPermissions('granted');
+        expect(await readScreenPermission()).toBe('granted');
+    });
+
+    it('hides the permission button when the API is unsupported', async () => {
+        setup();
+        stubPermissions('prompt');
+        expect(await readScreenPermission()).toBe('unavailable');
+    });
+
+    it('falls back to the older permission name before assuming a prompt is needed', async () => {
+        setup(async () => ({ screens: [primary], currentScreen: primary }));
+        const query = stubPermissions();
+        expect(await readScreenPermission()).toBe('prompt');
+        expect(query.mock.calls.map(([descriptor]) => descriptor.name)).toEqual(['window-management', 'window-placement']);
+    });
+
+    it('requests permission without opening a popup, so the click activation is not spent', async () => {
+        const { open } = setup(async () => ({ screens: [primary, secondary], currentScreen: primary }));
+        expect(await requestScreenPermission()).toBe(true);
+        expect(open).not.toHaveBeenCalled();
+    });
+
+    it('reports a dismissed prompt so the user can retry', async () => {
+        setup(() => Promise.reject(new Error('Permission denied')));
+        expect(await requestScreenPermission()).toBe(false);
     });
 });

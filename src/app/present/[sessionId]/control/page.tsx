@@ -4,7 +4,15 @@ import { useEffect, useState, useCallback, useRef, use } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { SlideRenderer } from '@/components/SlideRenderer';
 import { Deck, SessionState, Slide, BlackoutMode } from '@/types';
-import { DISPLAY_MESSAGES, DisplayPlacement, prepareDisplayWindow } from '@/lib/display-window';
+import {
+    DISPLAY_MESSAGES,
+    DisplayPlacement,
+    SCREEN_PERMISSION_MESSAGES,
+    ScreenPermission,
+    prepareDisplayWindow,
+    readScreenPermission,
+    requestScreenPermission,
+} from '@/lib/display-window';
 
 interface ControlPageProps {
     params: Promise<{ sessionId: string }>;
@@ -19,12 +27,17 @@ export default function ControlPage({ params }: ControlPageProps) {
     const [blackoutMode, setBlackoutModeState] = useState<BlackoutMode>('none');
     const [displayMessage, setDisplayMessage] = useState('');
     const [openingDisplay, setOpeningDisplay] = useState(false);
+    const [screenPermission, setScreenPermission] = useState<ScreenPermission>('unavailable');
 
     useEffect(() => {
         const status = new URLSearchParams(window.location.search).get('display');
         if (status && Object.prototype.hasOwnProperty.call(DISPLAY_MESSAGES, status)) {
             setDisplayMessage(DISPLAY_MESSAGES[status as DisplayPlacement]);
         }
+        readScreenPermission().then((permission) => {
+            setScreenPermission(permission);
+            if (permission === 'prompt') setDisplayMessage(SCREEN_PERMISSION_MESSAGES.prompt);
+        });
     }, []);
 
     // Timer state
@@ -198,6 +211,13 @@ export default function ControlPage({ params }: ControlPageProps) {
         setOpeningDisplay(false);
     };
 
+    // Keep the button available for a retry when the prompt is dismissed.
+    const allowScreenAccess = async () => {
+        const granted = await requestScreenPermission();
+        setScreenPermission(granted ? 'granted' : 'prompt');
+        setDisplayMessage(granted ? SCREEN_PERMISSION_MESSAGES.granted : DISPLAY_MESSAGES.denied);
+    };
+
     if (loading) {
         return (
             <div className="control-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -231,6 +251,11 @@ export default function ControlPage({ params }: ControlPageProps) {
                     </div>
                 </div>
                 <div className="flex items-center gap-md">
+                    {screenPermission === 'prompt' && (
+                        <button className="btn btn-secondary" onClick={allowScreenAccess} aria-label="Allow window management">
+                            🖥 모니터 권한 허용
+                        </button>
+                    )}
                     <button className="btn btn-primary" onClick={openDisplay} disabled={openingDisplay} aria-label="Open display window">
                         {openingDisplay ? '송출 준비 중...' : '📺 Display 열기'}
                     </button>

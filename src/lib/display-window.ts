@@ -22,6 +22,38 @@ export const DISPLAY_MESSAGES: Record<DisplayPlacement, string> = {
     closed: '송출 창이 닫혔습니다. Display 열기를 눌러 다시 열어 주세요.',
 };
 
+export type ScreenPermission = 'granted' | 'prompt' | 'unavailable';
+
+export const SCREEN_PERMISSION_MESSAGES: Record<'prompt' | 'granted', string> = {
+    prompt: '자동 모니터 배치를 위해 "모니터 권한 허용"을 눌러 주세요.',
+    granted: '모니터 권한을 허용했습니다. Display 열기를 누르면 다른 모니터에 자동으로 배치됩니다.',
+};
+
+export async function readScreenPermission(): Promise<ScreenPermission> {
+    if (!(window as Window & { getScreenDetails?: unknown }).getScreenDetails) return 'unavailable';
+    for (const name of ['window-management', 'window-placement']) {
+        try {
+            const status = await navigator.permissions.query({ name: name as PermissionName });
+            return status.state === 'granted' ? 'granted' : 'prompt';
+        } catch { /* Older browsers only know one of the two permission names. */ }
+    }
+    return 'prompt';
+}
+
+// Must run directly in the click handler. Chrome only shows the window
+// management prompt when getScreenDetails() consumes a user activation, and
+// the window.open() below consumes it first, so the popup cannot share a click.
+export async function requestScreenPermission() {
+    const host = window as Window & { getScreenDetails?: () => Promise<ScreenDetails> };
+    if (!host.getScreenDetails) return false;
+    try {
+        await host.getScreenDetails();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 export function selectDisplayScreen(details: ScreenDetails) {
     const others = details.screens.filter((screen) =>
         screen.availLeft !== details.currentScreen.availLeft ||
