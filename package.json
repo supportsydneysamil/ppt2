@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:next\" \"npm run dev:ws\"",
+    "predev:next": "npm run db:setup",
     "dev:next": "next dev",
     "dev:ws": "npx tsx src/server/ws-server.ts",
     "build": "next build",
@@ -12,6 +13,7 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
+    "db:setup": "node scripts/setup-db.cjs",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "db:studio": "npx prisma studio"

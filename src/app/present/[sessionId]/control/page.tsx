@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, use } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { SlideRenderer } from '@/components/SlideRenderer';
 import { Deck, SessionState, Slide, BlackoutMode } from '@/types';
+import { DISPLAY_MESSAGES, DisplayPlacement, prepareDisplayWindow } from '@/lib/display-window';
 
 interface ControlPageProps {
     params: Promise<{ sessionId: string }>;
@@ -16,6 +17,15 @@ export default function ControlPage({ params }: ControlPageProps) {
     const [error, setError] = useState<string | null>(null);
     const [slideIndex, setSlideIndex] = useState(0);
     const [blackoutMode, setBlackoutModeState] = useState<BlackoutMode>('none');
+    const [displayMessage, setDisplayMessage] = useState('');
+    const [openingDisplay, setOpeningDisplay] = useState(false);
+
+    useEffect(() => {
+        const status = new URLSearchParams(window.location.search).get('display');
+        if (status && Object.prototype.hasOwnProperty.call(DISPLAY_MESSAGES, status)) {
+            setDisplayMessage(DISPLAY_MESSAGES[status as DisplayPlacement]);
+        }
+    }, []);
 
     // Timer state
     const [timerRunning, setTimerRunning] = useState(false);
@@ -178,9 +188,14 @@ export default function ControlPage({ params }: ControlPageProps) {
     }, [nextSlide, prevSlide, toggleBlackout, goToSlide, deck]);
 
     // Open display window
-    const openDisplay = () => {
-        const displayUrl = `/present/${sessionId}/display`;
-        window.open(displayUrl, 'display', 'width=1920,height=1080');
+    const openDisplay = async () => {
+        if (openingDisplay) return;
+        setOpeningDisplay(true);
+        const display = prepareDisplayWindow();
+        let placement = await display.placement;
+        if (!display.show(sessionId) && placement !== 'blocked') placement = 'closed';
+        setDisplayMessage(DISPLAY_MESSAGES[placement]);
+        setOpeningDisplay(false);
     };
 
     if (loading) {
@@ -205,7 +220,7 @@ export default function ControlPage({ params }: ControlPageProps) {
     return (
         <div className="control-panel">
             {/* Header */}
-            <div className="control-header">
+            <div className="control-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
                 <div className="flex items-center gap-md">
                     <h1 style={{ fontSize: '20px', fontWeight: 600 }}>{deck.title}</h1>
                     <div className="flex items-center gap-sm">
@@ -216,13 +231,14 @@ export default function ControlPage({ params }: ControlPageProps) {
                     </div>
                 </div>
                 <div className="flex items-center gap-md">
-                    <button className="btn btn-primary" onClick={openDisplay} aria-label="Open display window">
-                        📺 Display 열기
+                    <button className="btn btn-primary" onClick={openDisplay} disabled={openingDisplay} aria-label="Open display window">
+                        {openingDisplay ? '송출 준비 중...' : '📺 Display 열기'}
                     </button>
                     <a href={`/editor/${deck.id}`} className="btn btn-secondary" aria-label="Edit presentation">
                         ✏️ 편집
                     </a>
                 </div>
+                {displayMessage && <p role="status" style={{ flexBasis: '100%', margin: 0 }}>{displayMessage}</p>}
             </div>
 
             {/* Slide List */}

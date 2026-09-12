@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, use } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { SlideRenderer } from '@/components/SlideRenderer';
 import { Deck, SessionState, Slide } from '@/types';
+import { DisplayFullscreen } from '@/components/DisplayFullscreen';
 
 interface DisplayPageProps {
     params: Promise<{ sessionId: string }>;
@@ -70,24 +71,6 @@ export default function DisplayPage({ params }: DisplayPageProps) {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Request fullscreen on mount
-    useEffect(() => {
-        const requestFullscreen = async () => {
-            try {
-                if (document.documentElement.requestFullscreen) {
-                    await document.documentElement.requestFullscreen();
-                }
-            } catch (e) {
-                // Fullscreen might be denied by browser
-                console.log('Fullscreen request denied');
-            }
-        };
-
-        // Small delay to ensure page is loaded
-        const timer = setTimeout(requestFullscreen, 500);
-        return () => clearTimeout(timer);
-    }, []);
-
     if (loading) {
         return (
             <div className="presentation-display" style={{ backgroundColor: '#000' }}>
@@ -112,7 +95,7 @@ export default function DisplayPage({ params }: DisplayPageProps) {
                 style={{
                     backgroundColor: blackoutMode === 'black' ? '#000000' : '#ffffff',
                 }}
-            />
+            ><DisplayFullscreen /></div>
         );
     }
 
@@ -121,7 +104,7 @@ export default function DisplayPage({ params }: DisplayPageProps) {
             <div
                 className="presentation-display"
                 style={{ backgroundColor: deck.settings.theme.bgColor }}
-            />
+            ><DisplayFullscreen /></div>
         );
     }
 
@@ -133,6 +116,7 @@ export default function DisplayPage({ params }: DisplayPageProps) {
                 position: 'relative',
             }}
         >
+            <DisplayFullscreen />
             {/* Connection status indicator (subtle) */}
             {!isConnected && (
                 <div

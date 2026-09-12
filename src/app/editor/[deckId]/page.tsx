@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Deck, Slide, SlideType, SplitMode, DEFAULT_DECK_SETTINGS } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { prepareDisplayWindow } from '@/lib/display-window';
 
 // Dynamically import SlideRenderer to avoid SSR issues
 const SlideRenderer = dynamic(() => import('@/components/SlideRenderer'), { ssr: false });
@@ -24,6 +25,8 @@ export default function EditorPage({ params }: EditorPageProps) {
     const [error, setError] = useState<string | null>(null);
     const [selectedSlideIndex, setSelectedSlideIndex] = useState(0);
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+    const [starting, setStarting] = useState(false);
+    const [startError, setStartError] = useState<string | null>(null);
 
     // Fetch deck data
     useEffect(() => {
@@ -73,10 +76,10 @@ export default function EditorPage({ params }: EditorPageProps) {
 
     // Debounced save
     useEffect(() => {
-        if (saved) return;
+        if (saved || starting) return;
         const timer = setTimeout(saveDeck, 1000);
         return () => clearTimeout(timer);
-    }, [saved, saveDeck]);
+    }, [saved, saveDeck, starting]);
 
     // Mark as unsaved when deck changes
     const updateDeck = useCallback((updates: Partial<Deck>) => {
@@ -178,7 +181,18 @@ export default function EditorPage({ params }: EditorPageProps) {
 
     // Start presentation
     const startPresentation = async () => {
+        if (starting || !deck) return;
+        setStarting(true);
+        setStartError(null);
+        const display = prepareDisplayWindow();
         try {
+            const saveResponse = await fetch(`/api/decks/${deckId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: deck.title, settings: deck.settings, slides: deck.slides }),
+            });
+            const saveResult = await saveResponse.json();
+            if (!saveResponse.ok || !saveResult.success) throw new Error('Failed to save deck');
             // Create new session
             const res = await fetch('/api/sessions', {
                 method: 'POST',
@@ -187,11 +201,14 @@ export default function EditorPage({ params }: EditorPageProps) {
             });
             const data = await res.json();
 
-            if (data.success && data.data) {
-                // Open control screen
-                router.push(`/present/${data.data.id}/control`);
-            }
+            if (!res.ok || !data.success || !data.data?.id) throw new Error('Failed to create session');
+            let placement = await display.placement;
+            if (!display.show(data.data.id) && placement !== 'blocked') placement = 'closed';
+            router.push(`/present/${data.data.id}/control?display=${placement}`);
         } catch (err) {
+            display.popup?.close();
+            setStartError('프레젠테이션을 시작하지 못했습니다. 다시 시도해 주세요.');
+            setStarting(false);
             console.error('Failed to create session:', err);
         }
     };
@@ -255,8 +272,9 @@ export default function EditorPage({ params }: EditorPageProps) {
                     <button className="btn btn-secondary" onClick={exportPptx} aria-label="Export as PPTX">
                         📥 PPTX 다운로드
                     </button>
-                    <button className="btn btn-primary" onClick={startPresentation} aria-label="Start presentation">
-                        ▶ 프레젠테이션 시작
+                    {startError && <span role="alert">{startError}</span>}
+                    <button className="btn btn-primary" onClick={startPresentation} disabled={starting || saving} aria-label="Start presentation">
+                        {starting ? '송출 준비 중...' : '▶ 프레젠테이션 시작'}
                     </button>
                 </div>
             </div>

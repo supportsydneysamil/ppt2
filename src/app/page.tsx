@@ -8,6 +8,8 @@ export default function HomePage() {
   const router = useRouter();
   const [decks, setDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDecks() {
@@ -27,6 +29,9 @@ export default function HomePage() {
   }, []);
 
   const createNewDeck = async () => {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
     try {
       const res = await fetch('/api/decks', {
         method: 'POST',
@@ -34,11 +39,14 @@ export default function HomePage() {
         body: JSON.stringify({ title: '새 프레젠테이션' }),
       });
       const data = await res.json();
-      if (data.success && data.data) {
-        router.push(`/editor/${data.data.id}`);
+      if (!res.ok || !data.success || !data.data?.id) {
+        throw new Error(data.error || 'Failed to create deck');
       }
+      router.push(`/editor/${data.data.id}`);
     } catch (err) {
       console.error('Failed to create deck:', err);
+      setError('프레젠테이션을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      setCreating(false);
     }
   };
 
@@ -82,12 +90,19 @@ export default function HomePage() {
         <button
           className="btn btn-primary btn-lg"
           onClick={createNewDeck}
+          disabled={creating}
           style={{ padding: '16px 32px', fontSize: '18px' }}
           aria-label="Create new presentation"
         >
-          ✨ 새 프레젠테이션 만들기
+          {creating ? '만드는 중...' : '✨ 새 프레젠테이션 만들기'}
         </button>
       </div>
+
+      {error && (
+        <p role="alert" style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--color-error, #ef4444)' }}>
+          {error}
+        </p>
+      )}
 
       {/* Deck List */}
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
@@ -111,8 +126,8 @@ export default function HomePage() {
             }}
           >
             <p style={{ marginBottom: '16px' }}>아직 프레젠테이션이 없습니다.</p>
-            <button className="btn btn-secondary" onClick={createNewDeck}>
-              첫 번째 프레젠테이션 만들기
+            <button className="btn btn-secondary" onClick={createNewDeck} disabled={creating}>
+              {creating ? '만드는 중...' : '첫 번째 프레젠테이션 만들기'}
             </button>
           </div>
         ) : (

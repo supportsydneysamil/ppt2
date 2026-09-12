@@ -30,12 +30,17 @@ npm install
 ### 2. 데이터베이스 설정
 
 ```bash
-# Prisma 클라이언트 생성 (이미 마이그레이션 완료됨)
+# Prisma 클라이언트 생성
 npm run db:generate
 
-# 새로 시작하는 경우 마이그레이션
-npm run db:migrate
+# 로컬 연결 설정 및 기존 마이그레이션 적용
+npm run db:setup
 ```
+
+`npm run dev` 또는 `npm run dev:next` 실행 시에도 DB 설정을 자동으로 준비합니다.
+`DATABASE_URL`이 없으면 `.env`에 `DATABASE_URL="file:../dev.db"`를 추가하여
+프로젝트 루트의 `dev.db`를 사용합니다. 기존 설정과 데이터는 유지합니다.
+직접 설정하려면 `.env.example`을 `.env`로 복사하고 연결 경로를 수정하세요.
 
 ### 3. 개발 서버 실행
 
@@ -70,9 +75,9 @@ npm run start:ws
 ### 2. 프레젠테이션 송출 (듀얼 스크린)
 
 1. 에디터에서 "▶ 프레젠테이션 시작" 클릭
-2. Control Screen이 열립니다
-3. "📺 Display 열기" 버튼으로 Display 화면을 새 창에서 엽니다
-4. **Display 창을 프로젝터/TV가 연결된 모니터로 이동** (전체 화면 권장)
+2. 현재 창은 Control 화면으로 이동하고, Display 송출 창이 자동으로 열립니다.
+3. 지원 브라우저에서 모니터 관리 권한을 허용하면 운영 화면과 다른 모니터에 Display 창을 배치합니다. Windows 디스플레이 설정은 **확장** 모드로 설정하세요.
+4. 자동 배치가 지원되지 않거나 권한을 거부한 경우 Display 창을 직접 옮겨 주세요. 자동 전체 화면이 차단되면 송출 창의 **⛶ 전체 화면** 버튼을 누르세요. 팝업이 차단되거나 창을 닫은 경우 **📺 Display 열기**로 재시도할 수 있습니다. 내장 브라우저에서 창이 열리지 않으면 Chrome 또는 Edge에서 앱 주소를 여세요.
 5. Control Screen에서 조작하면 Display가 실시간으로 동기화됩니다
 
 ### 3. 단축키 (Control Screen)
