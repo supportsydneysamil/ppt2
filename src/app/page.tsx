@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Deck } from '@/types';
-import { prepareDisplayWindow } from '@/lib/display-window';
+import { delegateFullscreenWhenReady, prepareDisplayWindow } from '@/lib/display-window';
 import { createPresentationSession } from '@/lib/session-launch';
 import { cloneSlides } from '@/lib/slides';
 
@@ -105,6 +105,7 @@ export default function HomePage() {
     setBusyId(deckId);
     setError(null);
     const display = prepareDisplayWindow();
+    delegateFullscreenWhenReady(display.popup);
     try {
       const session = await createPresentationSession(deckId);
       let placement = await display.placement;

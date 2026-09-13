@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, use } from 'react';
+import { useRouter } from 'next/navigation';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { SlideRenderer } from '@/components/SlideRenderer';
 import { Deck, SessionState, BlackoutMode } from '@/types';
@@ -10,8 +11,11 @@ import {
     DisplayPlacement,
     SCREEN_PERMISSION_MESSAGES,
     ScreenPermission,
+    closeDisplayWindow,
+    delegateFullscreenWhenReady,
     prepareDisplayWindow,
     readScreenPermission,
+    requestDisplayFullscreen,
     requestScreenPermission,
 } from '@/lib/display-window';
 
@@ -21,6 +25,7 @@ interface ControlPageProps {
 
 export default function ControlPage({ params }: ControlPageProps) {
     const { sessionId } = use(params);
+    const router = useRouter();
     const [deck, setDeck] = useState<Deck | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -230,10 +235,30 @@ export default function ControlPage({ params }: ControlPageProps) {
         if (openingDisplay) return;
         setOpeningDisplay(true);
         const display = prepareDisplayWindow();
+        delegateFullscreenWhenReady(display.popup);
         let placement = await display.placement;
         if (!display.show(sessionId) && placement !== 'blocked') placement = 'closed';
         setDisplayMessage(DISPLAY_MESSAGES[placement]);
         setOpeningDisplay(false);
+    };
+
+    const makeDisplayFullscreen = () => {
+        setDisplayMessage(
+            requestDisplayFullscreen()
+                ? '송출 창을 전체 화면으로 전환했습니다.'
+                : '송출 창을 찾을 수 없습니다. Display 열기를 눌러 주세요.'
+        );
+    };
+
+    const endPresentation = async () => {
+        if (!confirm('송출을 종료하고 편집 화면으로 돌아가시겠습니까?')) return;
+        closeDisplayWindow();
+        try {
+            await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+        } catch (err) {
+            console.error('Failed to delete session:', err);
+        }
+        router.push(`/editor/${deck?.id ?? ''}`);
     };
 
     // Keep the button available for a retry when the prompt is dismissed.
@@ -243,7 +268,7 @@ export default function ControlPage({ params }: ControlPageProps) {
         setDisplayMessage(granted ? SCREEN_PERMISSION_MESSAGES.granted : DISPLAY_MESSAGES.denied);
     };
 
-                if (loading) {
+    if (loading) {
         return (
             <div className="control-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ color: '#fff', fontSize: '24px' }}>불러오는 중...</div>
@@ -284,9 +309,15 @@ export default function ControlPage({ params }: ControlPageProps) {
                     <button className="btn btn-primary" onClick={openDisplay} disabled={openingDisplay} aria-label="Open display window">
                         {openingDisplay ? '송출 준비 중...' : '📺 Display 열기'}
                     </button>
+                    <button className="btn btn-secondary" onClick={makeDisplayFullscreen} aria-label="송출 창 전체 화면">
+                        ⛶ 송출 전체 화면
+                    </button>
                     <a href={`/editor/${deck.id}`} className="btn btn-secondary" aria-label="Edit presentation">
                         ✏️ 편집
                     </a>
+                    <button className="btn btn-danger" onClick={endPresentation} aria-label="송출 종료">
+                        ■ 송출 종료
+                    </button>
                 </div>
                 {displayMessage && <p role="status" style={{ flexBasis: '100%', margin: 0 }}>{displayMessage}</p>}
             </div>

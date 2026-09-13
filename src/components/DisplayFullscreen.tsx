@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { DISPLAY_READY, ENTER_FULLSCREEN } from '@/lib/display-window';
 
 export function DisplayFullscreen() {
     const [fullscreen, setFullscreen] = useState(true);
@@ -9,15 +10,32 @@ export function DisplayFullscreen() {
     useEffect(() => {
         const update = () => setFullscreen(Boolean(document.fullscreenElement));
         document.addEventListener('fullscreenchange', update);
-        // Attempt automatically; browsers may require a click in this window.
-        const request = async () => {
+
+        const enterFullscreen = async () => {
             try {
                 if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
             } catch { /* Show the explicit user-activated fullscreen button. */ }
             update();
         };
-        void request();
-        return () => document.removeEventListener('fullscreenchange', update);
+
+        // The control window delegates its click so this window may go
+        // fullscreen without the operator walking over to the projector.
+        const onMessage = (event: MessageEvent) => {
+            if (event.origin !== window.location.origin || event.data !== ENTER_FULLSCREEN) return;
+            void enterFullscreen();
+        };
+        window.addEventListener('message', onMessage);
+
+        // Attempt automatically; browsers may require a click in this window.
+        void enterFullscreen();
+        try {
+            window.opener?.postMessage(DISPLAY_READY, window.location.origin);
+        } catch { /* Opened without an opener, so nobody can delegate a click. */ }
+
+        return () => {
+            document.removeEventListener('fullscreenchange', update);
+            window.removeEventListener('message', onMessage);
+        };
     }, []);
 
     if (fullscreen) return null;

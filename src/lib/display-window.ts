@@ -13,6 +13,13 @@ interface ScreenDetails {
 
 export type DisplayPlacement = 'placed' | 'manual' | 'denied' | 'single' | 'blocked' | 'closed';
 
+const DISPLAY_WINDOW_NAME = 'church-presentation-display';
+
+export const DISPLAY_READY = 'DISPLAY_READY';
+export const ENTER_FULLSCREEN = 'ENTER_FULLSCREEN';
+
+let displayWindow: Window | null = null;
+
 export const DISPLAY_MESSAGES: Record<DisplayPlacement, string> = {
     placed: '다른 모니터에 송출 창을 배치했습니다. 전체 화면이 아니면 송출 창의 전체 화면 버튼을 눌러 주세요.',
     manual: '자동 모니터 배치를 사용할 수 없습니다. 송출 창을 원하는 모니터로 옮긴 뒤 전체 화면 버튼을 눌러 주세요.',
@@ -67,9 +74,10 @@ export function selectDisplayScreen(details: ScreenDetails) {
 export function prepareDisplayWindow() {
     let popup: Window | null = null;
     try {
-        popup = window.open('', 'church-presentation-display', 'popup,width=1280,height=720');
+        popup = window.open('', DISPLAY_WINDOW_NAME, 'popup,width=1280,height=720');
     } catch { /* Some embedded browsers do not support popups. */ }
 
+    displayWindow = popup;
     const display = popup;
     const placement = (async (): Promise<DisplayPlacement> => {
         if (!display) return 'blocked';
@@ -114,4 +122,55 @@ export function prepareDisplayWindow() {
             }
         },
     };
+}
+
+export function getDisplayWindow(): Window | null {
+    return displayWindow && !displayWindow.closed ? displayWindow : null;
+}
+
+// A popup cannot enter fullscreen on its own, so the operator's click here is
+// handed over with capability delegation and spent by the display window.
+export function requestDisplayFullscreen(popup: Window | null = getDisplayWindow()) {
+    if (!popup || popup.closed) return false;
+    try {
+        popup.postMessage(ENTER_FULLSCREEN, {
+            targetOrigin: window.location.origin,
+            delegate: 'fullscreen',
+        } as WindowPostMessageOptions);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// The delegation only works once the display document listens, and the click it
+// carries expires in seconds, so give up quietly and leave the manual buttons.
+export function delegateFullscreenWhenReady(popup: Window | null, timeoutMs = 4000) {
+    if (!popup) return;
+    const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin || event.data !== DISPLAY_READY) return;
+        stop();
+        requestDisplayFullscreen(popup);
+    };
+    const timer = setTimeout(() => stop(), timeoutMs);
+    function stop() {
+        clearTimeout(timer);
+        window.removeEventListener('message', onMessage);
+    }
+    window.addEventListener('message', onMessage);
+}
+
+export function closeDisplayWindow() {
+    // The window name also reaches a popup that outlived a Control page reload;
+    // when none is left this only flashes a blank window we close right away.
+    let popup = getDisplayWindow();
+    if (!popup) {
+        try {
+            popup = window.open('', DISPLAY_WINDOW_NAME);
+        } catch { /* Nothing to close in browsers without popups. */ }
+    }
+    try {
+        popup?.close();
+    } catch { /* The operator can close the window manually. */ }
+    displayWindow = null;
 }

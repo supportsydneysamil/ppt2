@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { prepareDisplayWindow, readScreenPermission, requestScreenPermission, selectDisplayScreen } from '@/lib/display-window';
+import {
+    DISPLAY_READY,
+    ENTER_FULLSCREEN,
+    closeDisplayWindow,
+    delegateFullscreenWhenReady,
+    getDisplayWindow,
+    prepareDisplayWindow,
+    readScreenPermission,
+    requestDisplayFullscreen,
+    requestScreenPermission,
+    selectDisplayScreen,
+} from '@/lib/display-window';
 
 const primary = { availLeft: 0, availTop: 0, availWidth: 1920, availHeight: 1040, isPrimary: true };
 const secondary = { availLeft: -1920, availTop: 0, availWidth: 1920, availHeight: 1080, isPrimary: false };
@@ -80,6 +91,78 @@ describe('presentation display launch', () => {
         const { popup } = setup(async () => ({ screens: [primary, secondary], currentScreen: primary }));
         popup.moveTo = vi.fn();
         expect(await prepareDisplayWindow().placement).toBe('manual');
+    });
+});
+
+describe('fullscreen and shutdown', () => {
+    function setupWindow(blocked = false) {
+        const popup = {
+            closed: false,
+            close: vi.fn(() => { popup.closed = true; }),
+            postMessage: vi.fn(),
+            moveTo: vi.fn(),
+            resizeTo: vi.fn(),
+            screenX: 0,
+            screenY: 0,
+            location: { href: '' },
+        };
+        const listeners: ((event: unknown) => void)[] = [];
+        const open = vi.fn(() => blocked ? null : popup);
+        vi.stubGlobal('window', {
+            open,
+            location: { origin: 'http://localhost:3000' },
+            addEventListener: (_type: string, fn: (event: unknown) => void) => listeners.push(fn),
+            removeEventListener: (_type: string, fn: (event: unknown) => void) => {
+                const at = listeners.indexOf(fn);
+                if (at >= 0) listeners.splice(at, 1);
+            },
+        });
+        return { popup, open, listeners };
+    }
+
+    it('hands the click to the display window so it can go fullscreen itself', () => {
+        const { popup } = setupWindow();
+        prepareDisplayWindow();
+        expect(requestDisplayFullscreen()).toBe(true);
+        expect(popup.postMessage).toHaveBeenCalledWith(ENTER_FULLSCREEN, {
+            targetOrigin: 'http://localhost:3000',
+            delegate: 'fullscreen',
+        });
+    });
+
+    it('waits for the display document before delegating, and ignores other origins', () => {
+        const { popup, listeners } = setupWindow();
+        delegateFullscreenWhenReady(prepareDisplayWindow().popup);
+
+        listeners[0]({ origin: 'https://evil.example', data: DISPLAY_READY });
+        expect(popup.postMessage).not.toHaveBeenCalled();
+
+        listeners[0]({ origin: 'http://localhost:3000', data: DISPLAY_READY });
+        expect(popup.postMessage).toHaveBeenCalledOnce();
+        expect(listeners).toHaveLength(0);
+    });
+
+    it('reports no window to make fullscreen once it is closed', () => {
+        const { popup } = setupWindow();
+        prepareDisplayWindow();
+        popup.closed = true;
+        expect(requestDisplayFullscreen()).toBe(false);
+    });
+
+    it('closes the display window when the service ends', () => {
+        const { popup, open } = setupWindow();
+        prepareDisplayWindow();
+        closeDisplayWindow();
+        expect(popup.close).toHaveBeenCalledOnce();
+        expect(getDisplayWindow()).toBeNull();
+        expect(open).toHaveBeenCalledOnce();
+    });
+
+    it('reaches a display window opened before a control page reload', () => {
+        const { popup, open } = setupWindow();
+        closeDisplayWindow();
+        expect(open).toHaveBeenCalledWith('', 'church-presentation-display');
+        expect(popup.close).toHaveBeenCalledOnce();
     });
 });
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { v4 as uuidv4 } from 'uuid';
 import { Deck, Slide, SlideType, SplitMode } from '@/types';
-import { prepareDisplayWindow } from '@/lib/display-window';
+import { delegateFullscreenWhenReady, prepareDisplayWindow } from '@/lib/display-window';
 import { createPresentationSession } from '@/lib/session-launch';
 import {
     createSlide,
@@ -221,6 +221,7 @@ export default function EditorPage({ params }: EditorPageProps) {
         setStarting(true);
         setStartError(null);
         const display = prepareDisplayWindow();
+        delegateFullscreenWhenReady(display.popup);
         try {
             const saveResponse = await fetch(`/api/decks/${deckId}`, {
                 method: 'PUT',
