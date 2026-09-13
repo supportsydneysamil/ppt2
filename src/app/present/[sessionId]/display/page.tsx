@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, use } from 'react';
+import { useEffect, useState, useCallback, use, useRef } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { SlideRenderer } from '@/components/SlideRenderer';
 import { Deck, SessionState, Slide } from '@/types';
@@ -17,6 +17,8 @@ export default function DisplayPage({ params }: DisplayPageProps) {
     const [error, setError] = useState<string | null>(null);
     const [currentSlide, setCurrentSlide] = useState<Slide | null>(null);
     const [blackoutMode, setBlackoutMode] = useState<'none' | 'black' | 'white'>('none');
+    const deckRef = useRef<Deck | null>(null);
+    deckRef.current = deck;
 
     // Fetch session data
     useEffect(() => {
@@ -46,11 +48,11 @@ export default function DisplayPage({ params }: DisplayPageProps) {
 
     // Handle state changes from WebSocket
     const handleStateChange = useCallback((state: SessionState) => {
-        if (deck) {
-            setCurrentSlide(deck.slides[state.slideIndex] || null);
-            setBlackoutMode(state.blackoutMode);
-        }
-    }, [deck]);
+        const currentDeck = deckRef.current;
+        if (!currentDeck) return;
+        setCurrentSlide(currentDeck.slides[state.slideIndex] || null);
+        setBlackoutMode(state.blackoutMode);
+    }, []);
 
     // WebSocket connection
     const { isConnected } = useWebSocket({
@@ -74,7 +76,7 @@ export default function DisplayPage({ params }: DisplayPageProps) {
     if (loading) {
         return (
             <div className="presentation-display" style={{ backgroundColor: '#000' }}>
-                <div style={{ color: '#fff', fontSize: '24px' }}>Loading...</div>
+                <div style={{ color: '#fff', fontSize: '24px' }}>불러오는 중...</div>
             </div>
         );
     }
@@ -82,7 +84,7 @@ export default function DisplayPage({ params }: DisplayPageProps) {
     if (error || !deck) {
         return (
             <div className="presentation-display" style={{ backgroundColor: '#000' }}>
-                <div style={{ color: '#fff', fontSize: '24px' }}>{error || 'Session not found'}</div>
+                <div style={{ color: '#fff', fontSize: '24px' }}>{error || '세션을 찾을 수 없습니다'}</div>
             </div>
         );
     }

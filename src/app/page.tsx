@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Deck } from '@/types';
+import { prepareDisplayWindow } from '@/lib/display-window';
+import { createPresentationSession } from '@/lib/session-launch';
+import { cloneSlides } from '@/lib/slides';
 
 export default function HomePage() {
   const router = useRouter();
@@ -10,6 +13,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDecks() {
@@ -27,6 +32,12 @@ export default function HomePage() {
     }
     fetchDecks();
   }, []);
+
+  const visibleDecks = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return decks;
+    return decks.filter((deck) => deck.title.toLowerCase().includes(q));
+  }, [decks, query]);
 
   const createNewDeck = async () => {
     if (creating) return;
@@ -59,6 +70,51 @@ export default function HomePage() {
       setDecks((prev) => prev.filter((d) => d.id !== deckId));
     } catch (err) {
       console.error('Failed to delete deck:', err);
+    }
+  };
+
+  const duplicateDeck = async (deck: Deck, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busyId) return;
+    setBusyId(deck.id);
+    setError(null);
+    try {
+      const res = await fetch('/api/decks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `${deck.title} 복사`,
+          settings: deck.settings,
+          slides: cloneSlides(deck.slides),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.data) throw new Error(data.error);
+      setDecks((prev) => [data.data as Deck, ...prev]);
+    } catch (err) {
+      console.error('Failed to duplicate deck:', err);
+      setError('복제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const startDeck = async (deckId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busyId) return;
+    setBusyId(deckId);
+    setError(null);
+    const display = prepareDisplayWindow();
+    try {
+      const session = await createPresentationSession(deckId);
+      let placement = await display.placement;
+      if (!display.show(session.id) && placement !== 'blocked') placement = 'closed';
+      router.push(`/present/${session.id}/control?display=${placement}`);
+    } catch (err) {
+      display.popup?.close();
+      console.error('Failed to start presentation:', err);
+      setError('프레젠테이션을 시작하지 못했습니다. 다시 시도해 주세요.');
+      setBusyId(null);
     }
   };
 
@@ -106,9 +162,20 @@ export default function HomePage() {
 
       {/* Deck List */}
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-        <h2 style={{ fontSize: '20px', marginBottom: '24px', color: 'var(--color-text-secondary)' }}>
+        <h2 style={{ fontSize: '20px', marginBottom: '16px', color: 'var(--color-text-secondary)' }}>
           내 프레젠테이션
         </h2>
+        {decks.length > 0 && (
+          <input
+            type="search"
+            className="input"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="제목 검색"
+            aria-label="프레젠테이션 검색"
+            style={{ marginBottom: '16px', width: '100%' }}
+          />
+        )}
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '48px', color: 'var(--color-text-muted)' }}>
@@ -130,9 +197,22 @@ export default function HomePage() {
               {creating ? '만드는 중...' : '첫 번째 프레젠테이션 만들기'}
             </button>
           </div>
+        ) : visibleDecks.length === 0 ? (
+          <div
+            className="card"
+            style={{
+              textAlign: 'center',
+              padding: '48px',
+              color: 'var(--color-text-muted)',
+              border: '2px dashed var(--border-color)',
+              background: 'transparent',
+            }}
+          >
+            <p>검색 결과가 없습니다.</p>
+          </div>
         ) : (
           <div className="flex flex-col gap-md">
-            {decks.map((deck) => (
+            {visibleDecks.map((deck) => (
               <div
                 key={deck.id}
                 className="card"
@@ -151,9 +231,9 @@ export default function HomePage() {
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${deck.title}`}
+                aria-label={`${deck.title} 편집`}
               >
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center" style={{ gap: '12px', flexWrap: 'wrap' }}>
                   <div>
                     <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px' }}>
                       {deck.title}
@@ -162,23 +242,39 @@ export default function HomePage() {
                       {deck.slides.length}개 슬라이드 · {formatDate(deck.updatedAt)}
                     </p>
                   </div>
-                  <div className="flex gap-sm">
+                  <div className="flex gap-sm" style={{ flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={(e) => startDeck(deck.id, e)}
+                      disabled={busyId === deck.id}
+                      aria-label="프레젠테이션 시작"
+                    >
+                      ▶ 송출
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={(e) => duplicateDeck(deck, e)}
+                      disabled={busyId === deck.id}
+                      aria-label="복제"
+                    >
+                      복제
+                    </button>
                     <button
                       className="btn btn-secondary"
                       onClick={(e) => {
                         e.stopPropagation();
                         window.open(`/api/decks/${deck.id}/export/pptx`, '_blank');
                       }}
-                      aria-label="Download PPTX"
+                      aria-label="PPTX 다운로드"
                     >
-                      📥
+                      PPTX
                     </button>
                     <button
                       className="btn btn-danger"
                       onClick={(e) => deleteDeck(deck.id, e)}
-                      aria-label="Delete presentation"
+                      aria-label="삭제"
                     >
-                      🗑️
+                      삭제
                     </button>
                   </div>
                 </div>

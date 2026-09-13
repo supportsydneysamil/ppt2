@@ -3,9 +3,17 @@
 import { useEffect, useState, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Deck, Slide, SlideType, SplitMode, DEFAULT_DECK_SETTINGS } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { Deck, Slide, SlideType, SplitMode } from '@/types';
 import { prepareDisplayWindow } from '@/lib/display-window';
+import { createPresentationSession } from '@/lib/session-launch';
+import {
+    createSlide,
+    insertSlidesAfter,
+    slidePreviewText,
+    slideTypeLabel,
+    slidesFromStanzas,
+} from '@/lib/slides';
 
 // Dynamically import SlideRenderer to avoid SSR issues
 const SlideRenderer = dynamic(() => import('@/components/SlideRenderer'), { ssr: false });
@@ -27,6 +35,11 @@ export default function EditorPage({ params }: EditorPageProps) {
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [starting, setStarting] = useState(false);
     const [startError, setStartError] = useState<string | null>(null);
+    const [bulkType, setBulkType] = useState<'lyrics' | 'bible'>('lyrics');
+    const [bulkKorean, setBulkKorean] = useState('');
+    const [bulkEnglish, setBulkEnglish] = useState('');
+    const [bulkReference, setBulkReference] = useState('');
+    const [bulkError, setBulkError] = useState<string | null>(null);
 
     // Fetch deck data
     useEffect(() => {
@@ -81,6 +94,16 @@ export default function EditorPage({ params }: EditorPageProps) {
         return () => clearTimeout(timer);
     }, [saved, saveDeck, starting]);
 
+    useEffect(() => {
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (saved) return;
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [saved]);
+
     // Mark as unsaved when deck changes
     const updateDeck = useCallback((updates: Partial<Deck>) => {
         setDeck((prev) => {
@@ -102,29 +125,42 @@ export default function EditorPage({ params }: EditorPageProps) {
         setSaved(false);
     }, []);
 
-    // Add slide
-    const addSlide = useCallback((type: SlideType) => {
-        const newSlide: Slide = {
-            id: uuidv4(),
-            type,
-            content: getDefaultContent(type),
-            layout: {
-                align: 'center',
-                splitMode: type === 'bible' || type === 'lyrics' ? 'koEn' : undefined,
-            },
-        };
-
+    const addIncomingSlides = useCallback((incoming: Slide[]) => {
+        if (incoming.length === 0) return;
         setDeck((prev) => {
             if (!prev) return prev;
-            const slides = [...prev.slides, newSlide];
-            return { ...prev, slides };
+            const after = prev.slides.length === 0 ? -1 : selectedSlideIndex;
+            return { ...prev, slides: insertSlidesAfter(prev.slides, after, incoming) };
         });
-        setSelectedSlideIndex(deck?.slides.length || 0);
+        setSelectedSlideIndex(!deck || deck.slides.length === 0 ? 0 : selectedSlideIndex + 1);
         setSaved(false);
-    }, [deck]);
+    }, [deck, selectedSlideIndex]);
+
+    const addSlide = useCallback((type: SlideType) => {
+        addIncomingSlides([createSlide(type)]);
+    }, [addIncomingSlides]);
+
+    const importStanzas = useCallback(() => {
+        const incoming = slidesFromStanzas({
+            type: bulkType,
+            korean: bulkKorean,
+            english: bulkEnglish,
+            reference: bulkType === 'bible' ? bulkReference.trim() : undefined,
+        });
+        if (incoming.length === 0) {
+            setBulkError('빈 줄로 구분된 가사를 입력해 주세요.');
+            return;
+        }
+        setBulkError(null);
+        addIncomingSlides(incoming);
+        setBulkKorean('');
+        setBulkEnglish('');
+        setBulkReference('');
+    }, [addIncomingSlides, bulkEnglish, bulkKorean, bulkReference, bulkType]);
 
     // Delete slide
     const deleteSlide = useCallback((slideId: string) => {
+        if (!confirm('이 슬라이드를 삭제하시겠습니까?')) return;
         setDeck((prev) => {
             if (!prev) return prev;
             const slides = prev.slides.filter((s) => s.id !== slideId);
@@ -193,18 +229,10 @@ export default function EditorPage({ params }: EditorPageProps) {
             });
             const saveResult = await saveResponse.json();
             if (!saveResponse.ok || !saveResult.success) throw new Error('Failed to save deck');
-            // Create new session
-            const res = await fetch('/api/sessions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ deckId }),
-            });
-            const data = await res.json();
-
-            if (!res.ok || !data.success || !data.data?.id) throw new Error('Failed to create session');
+            const session = await createPresentationSession(deckId);
             let placement = await display.placement;
-            if (!display.show(data.data.id) && placement !== 'blocked') placement = 'closed';
-            router.push(`/present/${data.data.id}/control?display=${placement}`);
+            if (!display.show(session.id) && placement !== 'blocked') placement = 'closed';
+            router.push(`/present/${session.id}/control?display=${placement}`);
         } catch (err) {
             display.popup?.close();
             setStartError('프레젠테이션을 시작하지 못했습니다. 다시 시도해 주세요.');
@@ -233,7 +261,7 @@ export default function EditorPage({ params }: EditorPageProps) {
     if (loading) {
         return (
             <div className="editor-layout" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div>Loading...</div>
+                <div>불러오는 중...</div>
             </div>
         );
     }
@@ -267,6 +295,38 @@ export default function EditorPage({ params }: EditorPageProps) {
                     <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {saving ? '저장 중...' : saved ? '✓ 저장됨' : '● 저장 대기'}
                     </span>
+                    <label className="flex items-center gap-sm" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                        배경
+                        <input
+                            type="color"
+                            value={deck.settings.theme.bgColor}
+                            onChange={(e) =>
+                                updateDeck({
+                                    settings: {
+                                        ...deck.settings,
+                                        theme: { ...deck.settings.theme, bgColor: e.target.value },
+                                    },
+                                })
+                            }
+                            aria-label="배경색"
+                        />
+                    </label>
+                    <label className="flex items-center gap-sm" style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                        글자
+                        <input
+                            type="color"
+                            value={deck.settings.theme.textColor}
+                            onChange={(e) =>
+                                updateDeck({
+                                    settings: {
+                                        ...deck.settings,
+                                        theme: { ...deck.settings.theme, textColor: e.target.value },
+                                    },
+                                })
+                            }
+                            aria-label="글자색"
+                        />
+                    </label>
                 </div>
                 <div className="flex items-center gap-md">
                     <button className="btn btn-secondary" onClick={exportPptx} aria-label="Export as PPTX">
@@ -315,13 +375,16 @@ export default function EditorPage({ params }: EditorPageProps) {
                                     position: 'absolute',
                                     bottom: 4,
                                     left: 4,
+                                    right: 4,
                                     fontSize: '10px',
-                                    backgroundColor: 'rgba(0,0,0,0.7)',
+                                    backgroundColor: 'rgba(0,0,0,0.75)',
                                     padding: '2px 6px',
                                     borderRadius: '4px',
+                                    lineHeight: 1.3,
                                 }}
                             >
-                                {index + 1}
+                                {index + 1} · {slideTypeLabel(slide.type)}
+                                {slidePreviewText(slide, 18) ? ` · ${slidePreviewText(slide, 18)}` : ''}
                             </div>
                         </div>
                     ))}
@@ -330,7 +393,7 @@ export default function EditorPage({ params }: EditorPageProps) {
                 {/* Add Slide Buttons */}
                 <div className="card" style={{ marginTop: '16px', padding: '12px' }}>
                     <h4 style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
-                        슬라이드 추가
+                        현재 슬라이드 뒤에 추가
                     </h4>
                     <div className="flex flex-col gap-sm">
                         <button className="btn btn-secondary" onClick={() => addSlide('title')} style={{ fontSize: '12px' }}>
@@ -346,6 +409,56 @@ export default function EditorPage({ params }: EditorPageProps) {
                             + 이미지+텍스트
                         </button>
                     </div>
+                    <h4 style={{ fontSize: '12px', margin: '16px 0 8px', color: 'var(--color-text-secondary)' }}>
+                        가사/성경 일괄 입력
+                    </h4>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+                        절과 절 사이를 빈 줄로 구분하면 슬라이드가 여러 장으로 나뉩니다.
+                    </p>
+                    <select
+                        className="input select"
+                        value={bulkType}
+                        onChange={(e) => setBulkType(e.target.value as 'lyrics' | 'bible')}
+                        style={{ fontSize: '12px', marginBottom: '8px' }}
+                        aria-label="일괄 입력 유형"
+                    >
+                        <option value="lyrics">가사</option>
+                        <option value="bible">성경</option>
+                    </select>
+                    <textarea
+                        className="input textarea"
+                        value={bulkKorean}
+                        onChange={(e) => setBulkKorean(e.target.value)}
+                        placeholder="한국어 (빈 줄로 절 구분)"
+                        rows={4}
+                        style={{ fontSize: '12px', marginBottom: '8px' }}
+                    />
+                    <textarea
+                        className="input textarea"
+                        value={bulkEnglish}
+                        onChange={(e) => setBulkEnglish(e.target.value)}
+                        placeholder="English (optional, blank line per verse)"
+                        rows={3}
+                        style={{ fontSize: '12px', marginBottom: '8px' }}
+                    />
+                    {bulkType === 'bible' && (
+                        <input
+                            type="text"
+                            className="input"
+                            value={bulkReference}
+                            onChange={(e) => setBulkReference(e.target.value)}
+                            placeholder="구절 (예: 요한복음 3:16)"
+                            style={{ fontSize: '12px', marginBottom: '8px' }}
+                        />
+                    )}
+                    {bulkError && (
+                        <p role="alert" style={{ fontSize: '12px', color: 'var(--color-danger)', marginBottom: '8px' }}>
+                            {bulkError}
+                        </p>
+                    )}
+                    <button className="btn btn-primary" onClick={importStanzas} style={{ fontSize: '12px', width: '100%' }}>
+                        절마다 슬라이드 만들기
+                    </button>
                 </div>
             </div>
 
@@ -551,18 +664,3 @@ function SlideEditor({ slide, settings, onUpdate, onDelete, onDuplicate }: Slide
     );
 }
 
-// Helper function to get default content for slide type
-function getDefaultContent(type: SlideType): Slide['content'] {
-    switch (type) {
-        case 'title':
-            return { title: '새 제목' };
-        case 'bible':
-            return { korean: '', english: '', reference: '' };
-        case 'lyrics':
-            return { korean: '', english: '' };
-        case 'imageText':
-            return { body: '', imageUrl: '' };
-        default:
-            return {};
-    }
-}

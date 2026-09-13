@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useRef, use } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { SlideRenderer } from '@/components/SlideRenderer';
-import { Deck, SessionState, Slide, BlackoutMode } from '@/types';
+import { Deck, SessionState, BlackoutMode } from '@/types';
+import { slidePreviewText } from '@/lib/slides';
 import {
     DISPLAY_MESSAGES,
     DisplayPlacement,
@@ -44,6 +45,8 @@ export default function ControlPage({ params }: ControlPageProps) {
     const [timerRunning, setTimerRunning] = useState(false);
     const [timerSeconds, setTimerSeconds] = useState(0);
     const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const [notes, setNotes] = useState('');
+    const [notesSaved, setNotesSaved] = useState(true);
 
     // Fetch session data
     useEffect(() => {
@@ -57,6 +60,7 @@ export default function ControlPage({ params }: ControlPageProps) {
                     const initialState = data.data.state;
                     setSlideIndex(initialState.slideIndex);
                     setBlackoutModeState(initialState.blackoutMode);
+                    setNotes(data.data.notes || '');
                 } else {
                     setError(data.error || 'Failed to load session');
                 }
@@ -150,6 +154,23 @@ export default function ControlPage({ params }: ControlPageProps) {
         };
     }, [timerRunning]);
 
+    useEffect(() => {
+        if (notesSaved) return;
+        const timer = setTimeout(async () => {
+            try {
+                await fetch(`/api/sessions/${sessionId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes }),
+                });
+                setNotesSaved(true);
+            } catch (err) {
+                console.error('Failed to save notes:', err);
+            }
+        }, 600);
+        return () => clearTimeout(timer);
+    }, [notes, notesSaved, sessionId]);
+
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -185,6 +206,10 @@ export default function ControlPage({ params }: ControlPageProps) {
                     e.preventDefault();
                     toggleBlackout('white');
                     break;
+                case 'Escape':
+                    e.preventDefault();
+                    if (blackoutMode !== 'none') toggleBlackout(blackoutMode);
+                    break;
                 case 'Home':
                     e.preventDefault();
                     goToSlide(0);
@@ -198,7 +223,7 @@ export default function ControlPage({ params }: ControlPageProps) {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [nextSlide, prevSlide, toggleBlackout, goToSlide, deck]);
+    }, [nextSlide, prevSlide, toggleBlackout, goToSlide, deck, blackoutMode]);
 
     // Open display window
     const openDisplay = async () => {
@@ -218,10 +243,10 @@ export default function ControlPage({ params }: ControlPageProps) {
         setDisplayMessage(granted ? SCREEN_PERMISSION_MESSAGES.granted : DISPLAY_MESSAGES.denied);
     };
 
-    if (loading) {
+                if (loading) {
         return (
             <div className="control-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ color: '#fff', fontSize: '24px' }}>Loading...</div>
+                <div style={{ color: '#fff', fontSize: '24px' }}>불러오는 중...</div>
             </div>
         );
     }
@@ -229,7 +254,7 @@ export default function ControlPage({ params }: ControlPageProps) {
     if (error || !deck) {
         return (
             <div className="control-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ color: '#fff', fontSize: '24px' }}>{error || 'Session not found'}</div>
+                <div style={{ color: '#fff', fontSize: '24px' }}>{error || '세션을 찾을 수 없습니다'}</div>
             </div>
         );
     }
@@ -246,7 +271,7 @@ export default function ControlPage({ params }: ControlPageProps) {
                     <div className="flex items-center gap-sm">
                         <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
                         <span style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                            {isConnected ? 'Connected' : 'Disconnected'}
+                            {isConnected ? '연결됨' : '연결 끊김 · 재시도 중'}
                         </span>
                     </div>
                 </div>
@@ -338,6 +363,11 @@ export default function ControlPage({ params }: ControlPageProps) {
                 <div>
                     <h3 style={{ marginBottom: '8px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                         다음 슬라이드
+                        {nextSlideData && slidePreviewText(nextSlideData, 28) ? (
+                            <span style={{ marginLeft: 8, fontWeight: 400 }}>
+                                {slidePreviewText(nextSlideData, 28)}
+                            </span>
+                        ) : null}
                     </h3>
                     <div
                         style={{
@@ -399,7 +429,7 @@ export default function ControlPage({ params }: ControlPageProps) {
                             style={{ flex: 1 }}
                             aria-label="Toggle black screen"
                         >
-                            ⬛ Black
+                            ⬛ 검정
                         </button>
                         <button
                             className={`btn btn-lg ${blackoutMode === 'white' ? 'btn-success' : 'btn-secondary'}`}
@@ -407,7 +437,7 @@ export default function ControlPage({ params }: ControlPageProps) {
                             style={{ flex: 1, color: blackoutMode === 'white' ? '#000' : undefined }}
                             aria-label="Toggle white screen"
                         >
-                            ⬜ White
+                            ⬜ 흰색
                         </button>
                     </div>
                     {blackoutMode !== 'none' && (
@@ -415,6 +445,24 @@ export default function ControlPage({ params }: ControlPageProps) {
                             화면이 {blackoutMode === 'black' ? '검은색' : '흰색'}으로 가려져 있습니다
                         </p>
                     )}
+                </div>
+
+                <div className="card">
+                    <h3 style={{ marginBottom: '12px', fontSize: '14px' }}>운영 메모</h3>
+                    <textarea
+                        className="input textarea"
+                        value={notes}
+                        onChange={(e) => {
+                            setNotes(e.target.value);
+                            setNotesSaved(false);
+                        }}
+                        placeholder="다음 순서, 기도자, 큐를 적어 두세요"
+                        rows={5}
+                        aria-label="운영 메모"
+                    />
+                    <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: 8 }}>
+                        {notesSaved ? '저장됨' : '저장 중...'}
+                    </p>
                 </div>
 
                 {/* Timer */}
@@ -460,8 +508,9 @@ export default function ControlPage({ params }: ControlPageProps) {
                     <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.8 }}>
                         <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>→</kbd> / <kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>Space</kbd> 다음 슬라이드</div>
                         <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>←</kbd> 이전 슬라이드</div>
-                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>B</kbd> 블랙아웃</div>
-                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>W</kbd> 화이트아웃</div>
+                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>B</kbd> 검정 화면</div>
+                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>W</kbd> 흰색 화면</div>
+                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>Esc</kbd> 가림 해제</div>
                     </div>
                 </div>
             </div>
