@@ -232,6 +232,8 @@ export function SlideRenderer({
                     justifyContent: textAlign === 'center' ? 'center' : 'flex-start',
                     width: '100%',
                     paddingBottom: subText ? '2%' : 0,
+                    // Preview font sizes are estimated, not fitted, so clip instead of spilling over the sub text.
+                    overflow: isPreview ? 'hidden' : undefined,
                 }}
             >
                 {mainText}
@@ -255,6 +257,7 @@ export function SlideRenderer({
                         width: '100%',
                         paddingTop: '2%',
                         opacity: 0.9,
+                        overflow: isPreview ? 'hidden' : undefined,
                     }}
                 >
                     {subText}

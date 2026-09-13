@@ -440,6 +440,44 @@ a:hover {
   border-radius: var(--border-radius-lg);
 }
 
+.control-slide-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg-primary);
+}
+
+.control-slide-grid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-secondary);
+}
+
+.control-slide-grid-body {
+  flex: 1;
+  overflow: auto;
+  padding: var(--spacing-lg);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--grid-thumb-size, 220px));
+  grid-auto-rows: calc(var(--grid-thumb-size, 220px) * 9 / 16);
+  gap: var(--spacing-md);
+  align-content: start;
+  justify-content: center;
+}
+
+/* Rows are sized explicitly above; aspect-ratio here overflows its own row. */
+.control-slide-grid-body .slide-thumbnail {
+  position: relative;
+  padding: 0;
+  aspect-ratio: auto;
+  height: 100%;
+}
+
 .control-preview {
   display: flex;
   flex-direction: column;

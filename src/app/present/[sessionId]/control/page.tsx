@@ -26,6 +26,10 @@ interface ControlPageProps {
     params: Promise<{ sessionId: string }>;
 }
 
+const GRID_ZOOM_MIN = 120;
+const GRID_ZOOM_MAX = 520;
+const GRID_ZOOM_STEP = 40;
+
 export default function ControlPage({ params }: ControlPageProps) {
     const { sessionId } = use(params);
     const router = useRouter();
@@ -40,7 +44,12 @@ export default function ControlPage({ params }: ControlPageProps) {
     const [displayFullscreen, setDisplayFullscreen] = useState(false);
     const [displayOpen, setDisplayOpen] = useState(false);
     const [gridView, setGridView] = useState(false);
+    const [gridThumbSize, setGridThumbSize] = useState(220);
     const gridActiveRef = useRef<HTMLDivElement>(null);
+
+    const zoomGrid = useCallback((delta: number) => {
+        setGridThumbSize((size) => Math.max(GRID_ZOOM_MIN, Math.min(size + delta, GRID_ZOOM_MAX)));
+    }, []);
 
     useEffect(() => watchDisplayFullscreen(setDisplayFullscreen), []);
     useEffect(() => watchDisplayOpen(setDisplayOpen), []);
@@ -118,6 +127,11 @@ export default function ControlPage({ params }: ControlPageProps) {
         });
     }, [deck, wsSetSlideIndex, sessionId]);
 
+    const jumpFromGrid = useCallback((index: number) => {
+        goToSlide(index);
+        setGridView(false);
+    }, [goToSlide]);
+
     const nextSlide = useCallback(() => {
         goToSlide(slideIndex + 1);
     }, [goToSlide, slideIndex]);
@@ -186,6 +200,11 @@ export default function ControlPage({ params }: ControlPageProps) {
         return () => clearTimeout(timer);
     }, [notes, notesSaved, sessionId]);
 
+    useEffect(() => {
+        if (!gridView) return;
+        gridActiveRef.current?.scrollIntoView({ block: 'center' });
+    }, [gridView, slideIndex, gridThumbSize]);
+
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -201,35 +220,62 @@ export default function ControlPage({ params }: ControlPageProps) {
             }
 
             switch (e.key) {
+                case 'g':
+                case 'G':
+                    e.preventDefault();
+                    setGridView((open) => !open);
+                    break;
+                case '+':
+                case '=':
+                    if (!gridView) break;
+                    e.preventDefault();
+                    zoomGrid(GRID_ZOOM_STEP);
+                    break;
+                case '-':
+                case '_':
+                    if (!gridView) break;
+                    e.preventDefault();
+                    zoomGrid(-GRID_ZOOM_STEP);
+                    break;
                 case 'ArrowRight':
                 case ' ':
                 case 'Enter':
+                    if (gridView) break;
                     e.preventDefault();
                     nextSlide();
                     break;
                 case 'ArrowLeft':
+                    if (gridView) break;
                     e.preventDefault();
                     prevSlide();
                     break;
                 case 'b':
                 case 'B':
+                    if (gridView) break;
                     e.preventDefault();
                     toggleBlackout('black');
                     break;
                 case 'w':
                 case 'W':
+                    if (gridView) break;
                     e.preventDefault();
                     toggleBlackout('white');
                     break;
                 case 'Escape':
                     e.preventDefault();
+                    if (gridView) {
+                        setGridView(false);
+                        break;
+                    }
                     if (blackoutMode !== 'none') toggleBlackout(blackoutMode);
                     break;
                 case 'Home':
+                    if (gridView) break;
                     e.preventDefault();
                     goToSlide(0);
                     break;
                 case 'End':
+                    if (gridView) break;
                     e.preventDefault();
                     if (deck) goToSlide(deck.slides.length - 1);
                     break;
@@ -238,7 +284,7 @@ export default function ControlPage({ params }: ControlPageProps) {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [nextSlide, prevSlide, toggleBlackout, goToSlide, deck, blackoutMode]);
+    }, [nextSlide, prevSlide, toggleBlackout, goToSlide, deck, blackoutMode, gridView, zoomGrid]);
 
     // Open display window
     const openDisplay = async () => {
@@ -345,6 +391,14 @@ export default function ControlPage({ params }: ControlPageProps) {
                         aria-label={displayFullscreen ? '송출 창 창 모드' : '송출 창 전체 화면'}
                     >
                         {displayFullscreen ? '🗗 송출 창 모드' : '⛶ 송출 전체 화면'}
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => setGridView(true)}
+                        aria-pressed={gridView}
+                        aria-label="모든 슬라이드 그리드 보기"
+                    >
+                        ▦ 그리드
                     </button>
                     <button className="btn btn-secondary" onClick={goToEditor} aria-label="편집 화면으로">
                         ✏️ 편집
@@ -476,6 +530,13 @@ export default function ControlPage({ params }: ControlPageProps) {
                     >
                         다음 ▶
                     </button>
+                    <button
+                        className="btn btn-lg btn-secondary"
+                        onClick={() => setGridView(true)}
+                        aria-label="모든 슬라이드 그리드 보기"
+                    >
+                        ▦
+                    </button>
                 </div>
             </div>
 
@@ -572,10 +633,101 @@ export default function ControlPage({ params }: ControlPageProps) {
                         <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>←</kbd> 이전 슬라이드</div>
                         <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>B</kbd> 검정 화면</div>
                         <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>W</kbd> 흰색 화면</div>
-                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>Esc</kbd> 가림 해제</div>
+                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>G</kbd> 그리드 보기</div>
+                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>+</kbd> / <kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>−</kbd> 그리드 썸네일 크기</div>
+                        <div><kbd style={{ backgroundColor: 'var(--color-bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>Esc</kbd> 그리드/가림 해제</div>
                     </div>
                 </div>
             </div>
+
+            {gridView && (
+                <div className="control-slide-grid" role="dialog" aria-label="모든 슬라이드">
+                    <div className="control-slide-grid-header">
+                        <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>
+                            모든 슬라이드 · {slideIndex + 1}/{deck.slides.length}
+                        </h2>
+                        <div className="flex items-center gap-sm">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => zoomGrid(-GRID_ZOOM_STEP)}
+                                disabled={gridThumbSize <= GRID_ZOOM_MIN}
+                                aria-label="썸네일 축소"
+                            >
+                                −
+                            </button>
+                            <input
+                                type="range"
+                                min={GRID_ZOOM_MIN}
+                                max={GRID_ZOOM_MAX}
+                                step={GRID_ZOOM_STEP}
+                                value={gridThumbSize}
+                                onChange={(e) => setGridThumbSize(Number(e.target.value))}
+                                style={{ width: '140px' }}
+                                aria-label="썸네일 크기"
+                            />
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => zoomGrid(GRID_ZOOM_STEP)}
+                                disabled={gridThumbSize >= GRID_ZOOM_MAX}
+                                aria-label="썸네일 확대"
+                            >
+                                +
+                            </button>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setGridView(false)}
+                                aria-label="그리드 닫기"
+                            >
+                                닫기 (Esc)
+                            </button>
+                        </div>
+                    </div>
+                    <div
+                        className="control-slide-grid-body"
+                        style={{ '--grid-thumb-size': `${gridThumbSize}px` } as React.CSSProperties}
+                    >
+                        {deck.slides.map((slide, index) => (
+                            <div
+                                key={slide.id}
+                                ref={index === slideIndex ? gridActiveRef : undefined}
+                                className={`slide-thumbnail ${index === slideIndex ? 'active' : ''}`}
+                                onClick={() => jumpFromGrid(index)}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${index + 1}번 슬라이드로 이동`}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        jumpFromGrid(index);
+                                    }
+                                }}
+                            >
+                                <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                                    <SlideRenderer
+                                        slide={slide}
+                                        settings={deck.settings}
+                                        isPreview
+                                        style={{ position: 'absolute', inset: 0 }}
+                                    />
+                                </div>
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        bottom: 4,
+                                        left: 4,
+                                        fontSize: '12px',
+                                        backgroundColor: 'rgba(0,0,0,0.7)',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                    }}
+                                >
+                                    {index + 1}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
