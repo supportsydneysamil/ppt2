@@ -257,7 +257,6 @@ export default function ControlPage({ params }: ControlPageProps) {
     };
 
     const endPresentation = async () => {
-        if (!confirm('송출을 종료하고 편집 화면으로 돌아가시겠습니까?')) return;
         closeDisplayWindow();
         try {
             await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
