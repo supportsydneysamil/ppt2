@@ -17,6 +17,13 @@ const DISPLAY_WINDOW_NAME = 'church-presentation-display';
 
 export const DISPLAY_READY = 'DISPLAY_READY';
 export const ENTER_FULLSCREEN = 'ENTER_FULLSCREEN';
+export const EXIT_FULLSCREEN = 'EXIT_FULLSCREEN';
+export const DISPLAY_FULLSCREEN = 'DISPLAY_FULLSCREEN';
+
+export interface DisplayFullscreenMessage {
+    type: typeof DISPLAY_FULLSCREEN;
+    fullscreen: boolean;
+}
 
 let displayWindow: Window | null = null;
 
@@ -141,6 +148,30 @@ export function requestDisplayFullscreen(popup: Window | null = getDisplayWindow
     } catch {
         return false;
     }
+}
+
+// Leaving fullscreen needs no user activation, so a plain message is enough.
+export function exitDisplayFullscreen(popup: Window | null = getDisplayWindow()) {
+    if (!popup || popup.closed) return false;
+    try {
+        popup.postMessage(EXIT_FULLSCREEN, window.location.origin);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// The display window owns the truth: it reports every fullscreen change, including
+// the ones the operator makes with Esc or F11 over on the projector.
+export function watchDisplayFullscreen(onChange: (fullscreen: boolean) => void) {
+    const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        const message = event.data as DisplayFullscreenMessage | string | null;
+        if (!message || typeof message !== 'object' || message.type !== DISPLAY_FULLSCREEN) return;
+        onChange(Boolean(message.fullscreen));
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
 }
 
 // The delegation only works once the display document listens, and the click it

@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+    DISPLAY_FULLSCREEN,
     DISPLAY_READY,
     ENTER_FULLSCREEN,
+    EXIT_FULLSCREEN,
     closeDisplayWindow,
     delegateFullscreenWhenReady,
+    exitDisplayFullscreen,
     getDisplayWindow,
     prepareDisplayWindow,
     readScreenPermission,
     requestDisplayFullscreen,
     requestScreenPermission,
     selectDisplayScreen,
+    watchDisplayFullscreen,
 } from '@/lib/display-window';
 
 const primary = { availLeft: 0, availTop: 0, availWidth: 1920, availHeight: 1040, isPrimary: true };
@@ -139,6 +143,30 @@ describe('fullscreen and shutdown', () => {
 
         listeners[0]({ origin: 'http://localhost:3000', data: DISPLAY_READY });
         expect(popup.postMessage).toHaveBeenCalledOnce();
+        expect(listeners).toHaveLength(0);
+    });
+
+    it('sends the operator back to a windowed display without delegating a click', () => {
+        const { popup } = setupWindow();
+        prepareDisplayWindow();
+        expect(exitDisplayFullscreen()).toBe(true);
+        expect(popup.postMessage).toHaveBeenCalledWith(EXIT_FULLSCREEN, 'http://localhost:3000');
+    });
+
+    it('tracks the fullscreen state the display window reports, ignoring other messages', () => {
+        const { listeners } = setupWindow();
+        const seen: boolean[] = [];
+        const stop = watchDisplayFullscreen((value) => seen.push(value));
+
+        listeners[0]({ origin: 'http://localhost:3000', data: DISPLAY_READY });
+        listeners[0]({ origin: 'https://evil.example', data: { type: DISPLAY_FULLSCREEN, fullscreen: true } });
+        expect(seen).toEqual([]);
+
+        listeners[0]({ origin: 'http://localhost:3000', data: { type: DISPLAY_FULLSCREEN, fullscreen: true } });
+        listeners[0]({ origin: 'http://localhost:3000', data: { type: DISPLAY_FULLSCREEN, fullscreen: false } });
+        expect(seen).toEqual([true, false]);
+
+        stop();
         expect(listeners).toHaveLength(0);
     });
 

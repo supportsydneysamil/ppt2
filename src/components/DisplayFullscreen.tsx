@@ -1,28 +1,58 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { DISPLAY_READY, ENTER_FULLSCREEN } from '@/lib/display-window';
+import {
+    DISPLAY_FULLSCREEN,
+    DISPLAY_READY,
+    ENTER_FULLSCREEN,
+    EXIT_FULLSCREEN,
+} from '@/lib/display-window';
 
 export function DisplayFullscreen() {
     const [fullscreen, setFullscreen] = useState(true);
     const [failed, setFailed] = useState(false);
 
     useEffect(() => {
-        const update = () => setFullscreen(Boolean(document.fullscreenElement));
-        document.addEventListener('fullscreenchange', update);
+        const report = () => {
+            const isFullscreen = Boolean(document.fullscreenElement);
+            setFullscreen(isFullscreen);
+            try {
+                window.opener?.postMessage(
+                    { type: DISPLAY_FULLSCREEN, fullscreen: isFullscreen },
+                    window.location.origin
+                );
+            } catch { /* Opened without an opener, so the control panel is elsewhere. */ }
+        };
+        document.addEventListener('fullscreenchange', report);
+        // Closing the window is also a way out of fullscreen.
+        const onPageHide = () => {
+            try {
+                window.opener?.postMessage(
+                    { type: DISPLAY_FULLSCREEN, fullscreen: false },
+                    window.location.origin
+                );
+            } catch { /* Nothing to tell. */ }
+        };
+        window.addEventListener('pagehide', onPageHide);
 
         const enterFullscreen = async () => {
             try {
                 if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
             } catch { /* Show the explicit user-activated fullscreen button. */ }
-            update();
+            report();
         };
 
         // The control window delegates its click so this window may go
         // fullscreen without the operator walking over to the projector.
-        const onMessage = (event: MessageEvent) => {
-            if (event.origin !== window.location.origin || event.data !== ENTER_FULLSCREEN) return;
-            void enterFullscreen();
+        const onMessage = async (event: MessageEvent) => {
+            if (event.origin !== window.location.origin) return;
+            if (event.data === ENTER_FULLSCREEN) await enterFullscreen();
+            if (event.data === EXIT_FULLSCREEN) {
+                try {
+                    if (document.fullscreenElement) await document.exitFullscreen();
+                } catch { /* Already windowed. */ }
+                report();
+            }
         };
         window.addEventListener('message', onMessage);
 
@@ -33,7 +63,8 @@ export function DisplayFullscreen() {
         } catch { /* Opened without an opener, so nobody can delegate a click. */ }
 
         return () => {
-            document.removeEventListener('fullscreenchange', update);
+            document.removeEventListener('fullscreenchange', report);
+            window.removeEventListener('pagehide', onPageHide);
             window.removeEventListener('message', onMessage);
         };
     }, []);

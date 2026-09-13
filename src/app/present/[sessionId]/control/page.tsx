@@ -13,10 +13,12 @@ import {
     ScreenPermission,
     closeDisplayWindow,
     delegateFullscreenWhenReady,
+    exitDisplayFullscreen,
     prepareDisplayWindow,
     readScreenPermission,
     requestDisplayFullscreen,
     requestScreenPermission,
+    watchDisplayFullscreen,
 } from '@/lib/display-window';
 
 interface ControlPageProps {
@@ -34,6 +36,9 @@ export default function ControlPage({ params }: ControlPageProps) {
     const [displayMessage, setDisplayMessage] = useState('');
     const [openingDisplay, setOpeningDisplay] = useState(false);
     const [screenPermission, setScreenPermission] = useState<ScreenPermission>('unavailable');
+    const [displayFullscreen, setDisplayFullscreen] = useState(false);
+
+    useEffect(() => watchDisplayFullscreen(setDisplayFullscreen), []);
 
     useEffect(() => {
         const status = new URLSearchParams(window.location.search).get('display');
@@ -242,12 +247,13 @@ export default function ControlPage({ params }: ControlPageProps) {
         setOpeningDisplay(false);
     };
 
-    const makeDisplayFullscreen = () => {
-        setDisplayMessage(
-            requestDisplayFullscreen()
-                ? '송출 창을 전체 화면으로 전환했습니다.'
-                : '송출 창을 찾을 수 없습니다. Display 열기를 눌러 주세요.'
-        );
+    const toggleDisplayFullscreen = () => {
+        const missing = '송출 창을 찾을 수 없습니다. Display 열기를 눌러 주세요.';
+        if (displayFullscreen) {
+            setDisplayMessage(exitDisplayFullscreen() ? '송출 창을 창 모드로 전환했습니다.' : missing);
+            return;
+        }
+        setDisplayMessage(requestDisplayFullscreen() ? '송출 창을 전체 화면으로 전환했습니다.' : missing);
     };
 
     const endPresentation = async () => {
@@ -309,8 +315,13 @@ export default function ControlPage({ params }: ControlPageProps) {
                     <button className="btn btn-primary" onClick={openDisplay} disabled={openingDisplay} aria-label="Open display window">
                         {openingDisplay ? '송출 준비 중...' : '📺 Display 열기'}
                     </button>
-                    <button className="btn btn-secondary" onClick={makeDisplayFullscreen} aria-label="송출 창 전체 화면">
-                        ⛶ 송출 전체 화면
+                    <button
+                        className="btn btn-secondary"
+                        onClick={toggleDisplayFullscreen}
+                        aria-pressed={displayFullscreen}
+                        aria-label={displayFullscreen ? '송출 창 창 모드' : '송출 창 전체 화면'}
+                    >
+                        {displayFullscreen ? '🗗 송출 창 모드' : '⛶ 송출 전체 화면'}
                     </button>
                     <a href={`/editor/${deck.id}`} className="btn btn-secondary" aria-label="Edit presentation">
                         ✏️ 편집
