@@ -1,8 +1,8 @@
-export async function createPresentationSession(deckId: string): Promise<{ id: string }> {
+export async function createPresentationSession(deckId: string, slideIndex = 0): Promise<{ id: string }> {
     const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deckId }),
+        body: JSON.stringify({ deckId, slideIndex }),
     });
     const data = await res.json();
     if (!res.ok || !data.success || !data.data?.id) {

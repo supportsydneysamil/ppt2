@@ -135,6 +135,37 @@ export function getDisplayWindow(): Window | null {
     return displayWindow && !displayWindow.closed ? displayWindow : null;
 }
 
+// Control navigations drop the in-memory handle; the window name still finds
+// a popup opened from the editor. A blank window means nothing was there.
+export function adoptDisplayWindow() {
+    const existing = getDisplayWindow();
+    if (existing) return existing;
+    let popup: Window | null = null;
+    try {
+        popup = window.open('', DISPLAY_WINDOW_NAME);
+    } catch {
+        return null;
+    }
+    if (!popup || popup.closed) return null;
+    try {
+        const href = popup.location.href;
+        if (!href || href === 'about:blank') {
+            popup.close();
+            return null;
+        }
+    } catch { /* Keep a named window we cannot inspect. */ }
+    displayWindow = popup;
+    return popup;
+}
+
+export function watchDisplayOpen(onChange: (open: boolean) => void) {
+    adoptDisplayWindow();
+    const report = () => onChange(!!getDisplayWindow());
+    report();
+    const id = window.setInterval(report, 400);
+    return () => window.clearInterval(id);
+}
+
 // A popup cannot enter fullscreen on its own, so the operator's click here is
 // handed over with capability delegation and spent by the display window.
 export function requestDisplayFullscreen(popup: Window | null = getDisplayWindow()) {

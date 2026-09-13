@@ -19,6 +19,7 @@ import {
     requestDisplayFullscreen,
     requestScreenPermission,
     watchDisplayFullscreen,
+    watchDisplayOpen,
 } from '@/lib/display-window';
 
 interface ControlPageProps {
@@ -37,8 +38,12 @@ export default function ControlPage({ params }: ControlPageProps) {
     const [openingDisplay, setOpeningDisplay] = useState(false);
     const [screenPermission, setScreenPermission] = useState<ScreenPermission>('unavailable');
     const [displayFullscreen, setDisplayFullscreen] = useState(false);
+    const [displayOpen, setDisplayOpen] = useState(false);
+    const [gridView, setGridView] = useState(false);
+    const gridActiveRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => watchDisplayFullscreen(setDisplayFullscreen), []);
+    useEffect(() => watchDisplayOpen(setDisplayOpen), []);
 
     useEffect(() => {
         const status = new URLSearchParams(window.location.search).get('display');
@@ -243,8 +248,21 @@ export default function ControlPage({ params }: ControlPageProps) {
         delegateFullscreenWhenReady(display.popup);
         let placement = await display.placement;
         if (!display.show(sessionId) && placement !== 'blocked') placement = 'closed';
+        setDisplayOpen(placement !== 'blocked' && placement !== 'closed');
         setDisplayMessage(DISPLAY_MESSAGES[placement]);
         setOpeningDisplay(false);
+    };
+
+    const closeDisplay = () => {
+        closeDisplayWindow();
+        setDisplayOpen(false);
+        setDisplayFullscreen(false);
+        setDisplayMessage(DISPLAY_MESSAGES.closed);
+    };
+
+    const toggleDisplay = () => {
+        if (displayOpen) closeDisplay();
+        else void openDisplay();
     };
 
     const toggleDisplayFullscreen = () => {
@@ -256,7 +274,7 @@ export default function ControlPage({ params }: ControlPageProps) {
         setDisplayMessage(requestDisplayFullscreen() ? '송출 창을 전체 화면으로 전환했습니다.' : missing);
     };
 
-    const endPresentation = async () => {
+    const goToEditor = async () => {
         closeDisplayWindow();
         try {
             await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
@@ -311,8 +329,14 @@ export default function ControlPage({ params }: ControlPageProps) {
                             🖥 모니터 권한 허용
                         </button>
                     )}
-                    <button className="btn btn-primary" onClick={openDisplay} disabled={openingDisplay} aria-label="Open display window">
-                        {openingDisplay ? '송출 준비 중...' : '📺 Display 열기'}
+                    <button
+                        className={displayOpen ? 'btn btn-secondary' : 'btn btn-primary'}
+                        onClick={toggleDisplay}
+                        disabled={openingDisplay}
+                        aria-pressed={displayOpen}
+                        aria-label={displayOpen ? '송출 창 닫기' : 'Display 열기'}
+                    >
+                        {openingDisplay ? '송출 준비 중...' : displayOpen ? '■ 송출 창 닫기' : '📺 Display 열기'}
                     </button>
                     <button
                         className="btn btn-secondary"
@@ -322,11 +346,8 @@ export default function ControlPage({ params }: ControlPageProps) {
                     >
                         {displayFullscreen ? '🗗 송출 창 모드' : '⛶ 송출 전체 화면'}
                     </button>
-                    <a href={`/editor/${deck.id}`} className="btn btn-secondary" aria-label="Edit presentation">
+                    <button className="btn btn-secondary" onClick={goToEditor} aria-label="편집 화면으로">
                         ✏️ 편집
-                    </a>
-                    <button className="btn btn-danger" onClick={endPresentation} aria-label="송출 종료">
-                        ■ 송출 종료
                     </button>
                 </div>
                 {displayMessage && <p role="status" style={{ flexBasis: '100%', margin: 0 }}>{displayMessage}</p>}

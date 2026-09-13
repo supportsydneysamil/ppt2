@@ -35,6 +35,7 @@ export default function EditorPage({ params }: EditorPageProps) {
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [starting, setStarting] = useState(false);
     const [startError, setStartError] = useState<string | null>(null);
+    const [startMenuOpen, setStartMenuOpen] = useState(false);
     const [bulkType, setBulkType] = useState<'lyrics' | 'bible'>('lyrics');
     const [bulkKorean, setBulkKorean] = useState('');
     const [bulkEnglish, setBulkEnglish] = useState('');
@@ -103,6 +104,22 @@ export default function EditorPage({ params }: EditorPageProps) {
         window.addEventListener('beforeunload', onBeforeUnload);
         return () => window.removeEventListener('beforeunload', onBeforeUnload);
     }, [saved]);
+
+    // Close the start menu on outside click or Escape
+    useEffect(() => {
+        if (!startMenuOpen) return;
+        const close = (event: Event) => {
+            if (event instanceof KeyboardEvent && event.key !== 'Escape') return;
+            if (event.type === 'pointerdown' && (event.target as HTMLElement)?.closest('[data-start-menu]')) return;
+            setStartMenuOpen(false);
+        };
+        document.addEventListener('pointerdown', close);
+        document.addEventListener('keydown', close);
+        return () => {
+            document.removeEventListener('pointerdown', close);
+            document.removeEventListener('keydown', close);
+        };
+    }, [startMenuOpen]);
 
     // Mark as unsaved when deck changes
     const updateDeck = useCallback((updates: Partial<Deck>) => {
@@ -215,9 +232,10 @@ export default function EditorPage({ params }: EditorPageProps) {
         setSaved(false);
     };
 
-    // Start presentation
-    const startPresentation = async () => {
+    // Start presentation from the beginning or from the selected slide
+    const startPresentation = async (startIndex: number) => {
         if (starting || !deck) return;
+        setStartMenuOpen(false);
         setStarting(true);
         setStartError(null);
         const display = prepareDisplayWindow();
@@ -230,7 +248,7 @@ export default function EditorPage({ params }: EditorPageProps) {
             });
             const saveResult = await saveResponse.json();
             if (!saveResponse.ok || !saveResult.success) throw new Error('Failed to save deck');
-            const session = await createPresentationSession(deckId);
+            const session = await createPresentationSession(deckId, startIndex);
             let placement = await display.placement;
             if (!display.show(session.id) && placement !== 'blocked') placement = 'closed';
             router.push(`/present/${session.id}/control?display=${placement}`);
@@ -334,9 +352,52 @@ export default function EditorPage({ params }: EditorPageProps) {
                         📥 PPTX 다운로드
                     </button>
                     {startError && <span role="alert">{startError}</span>}
-                    <button className="btn btn-primary" onClick={startPresentation} disabled={starting || saving} aria-label="Start presentation">
-                        {starting ? '송출 준비 중...' : '▶ 프레젠테이션 시작'}
-                    </button>
+                    <div data-start-menu style={{ position: 'relative' }}>
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => setStartMenuOpen((open) => !open)}
+                            disabled={starting || saving || deck.slides.length === 0}
+                            aria-haspopup="menu"
+                            aria-expanded={startMenuOpen}
+                            aria-label="Start presentation"
+                        >
+                            {starting ? '송출 준비 중...' : '▶ 프레젠테이션 시작 ▾'}
+                        </button>
+                        {startMenuOpen && (
+                            <div
+                                role="menu"
+                                className="card"
+                                style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 6px)',
+                                    right: 0,
+                                    zIndex: 20,
+                                    padding: '6px',
+                                    minWidth: '240px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                }}
+                            >
+                                <button
+                                    role="menuitem"
+                                    className="btn btn-secondary"
+                                    onClick={() => startPresentation(0)}
+                                    style={{ justifyContent: 'flex-start', fontSize: '13px' }}
+                                >
+                                    ⏮ 처음부터 시작
+                                </button>
+                                <button
+                                    role="menuitem"
+                                    className="btn btn-secondary"
+                                    onClick={() => startPresentation(selectedSlideIndex)}
+                                    style={{ justifyContent: 'flex-start', fontSize: '13px' }}
+                                >
+                                    ▶ 현재 슬라이드({selectedSlideIndex + 1}번)부터 시작
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

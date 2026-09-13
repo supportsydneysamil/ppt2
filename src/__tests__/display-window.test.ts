@@ -4,6 +4,7 @@ import {
     DISPLAY_READY,
     ENTER_FULLSCREEN,
     EXIT_FULLSCREEN,
+    adoptDisplayWindow,
     closeDisplayWindow,
     delegateFullscreenWhenReady,
     exitDisplayFullscreen,
@@ -177,7 +178,7 @@ describe('fullscreen and shutdown', () => {
         expect(requestDisplayFullscreen()).toBe(false);
     });
 
-    it('closes the display window when the service ends', () => {
+    it('closes the display window without requiring a control page navigation', () => {
         const { popup, open } = setupWindow();
         prepareDisplayWindow();
         closeDisplayWindow();
@@ -191,6 +192,30 @@ describe('fullscreen and shutdown', () => {
         closeDisplayWindow();
         expect(open).toHaveBeenCalledWith('', 'church-presentation-display');
         expect(popup.close).toHaveBeenCalledOnce();
+    });
+
+    it('adopts an existing named display window after control navigation', () => {
+        const { popup, open } = setupWindow();
+        closeDisplayWindow();
+        popup.closed = false;
+        popup.location.href = 'http://localhost:3000/present/s1/display';
+        open.mockClear();
+        popup.close.mockClear();
+        expect(adoptDisplayWindow()).toBe(popup);
+        expect(getDisplayWindow()).toBe(popup);
+        expect(open).toHaveBeenCalledWith('', 'church-presentation-display');
+        expect(popup.close).not.toHaveBeenCalled();
+    });
+
+    it('does not keep a blank popup when no display window exists', () => {
+        const { popup } = setupWindow();
+        closeDisplayWindow();
+        popup.closed = false;
+        popup.location.href = 'about:blank';
+        popup.close.mockClear();
+        expect(adoptDisplayWindow()).toBeNull();
+        expect(popup.close).toHaveBeenCalled();
+        expect(getDisplayWindow()).toBeNull();
     });
 });
 

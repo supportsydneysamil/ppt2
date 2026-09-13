@@ -6,7 +6,7 @@ import { Session, SessionState, Deck, DeckSettings, Slide, DEFAULT_SESSION_STATE
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { deckId } = body;
+        const { deckId, slideIndex } = body;
 
         if (!deckId) {
             return NextResponse.json<ApiResponse<Session>>(
@@ -27,8 +27,13 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const slides = JSON.parse(deck.slides) as Slide[];
+        const lastIndex = Math.max(slides.length - 1, 0);
+        const startIndex = Math.min(Math.max(Math.trunc(Number(slideIndex)) || 0, 0), lastIndex);
+
         const initialState: SessionState = {
             ...DEFAULT_SESSION_STATE,
+            slideIndex: startIndex,
             updatedAt: new Date().toISOString(),
         };
 
